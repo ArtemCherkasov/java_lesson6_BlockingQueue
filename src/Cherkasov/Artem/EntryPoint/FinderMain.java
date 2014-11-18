@@ -5,35 +5,56 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class FinderMain {
 	private BlockingQueue<byte[]> blockingQueue = new ArrayBlockingQueue<byte[]>(10);
+	private static ExecutorService service;
 	public static void main(String[] args) {
 		// TODO Auto-generated method stub
+		service = Executors.newFixedThreadPool(10);
 		FinderMain finderMain = new FinderMain();
-		finderMain.startFind();
+		finderMain.startFind(service);
 
 	}
 	
-	public void startFind(){
-		Object syncConsumer = new Object();
-		Object syncProducer = new Object();		
-		Producer producer = new Producer("out.txt", syncConsumer, syncProducer);
-		Consumer consumer = new Consumer(syncConsumer, syncProducer);
-		producer.start();
-		consumer.start();
+	public void startFind(ExecutorService service){
+		Finder finder;
+
+		for (int i = 0; i < 5; ++i){ // Имитация нахождения 5 файлов в директории :))
+			finder = new Finder("out" + i + ".txt");
+			service.submit(finder);
+		}
+	}
+	
+	class Finder extends Thread{
+		private Producer producer;
+		private Consumer consumer;
+		
+		public Finder(String fileName) {
+			// TODO Auto-generated constructor stub
+			consumer = new Consumer();
+			producer = new Producer(fileName);
+			
+		}
+		
+		@Override
+		public void run() {
+			// TODO Auto-generated method stub
+			producer.start();
+			consumer.start();
+		}
+		
 	}
 	
 	class Producer extends Thread {
-		private Object syncConsumer;
-		private Object syncProducer;
 		private String fileName;
 		
-		public Producer(String fileName, Object syncConsumer, Object syncProducer) {
+		public Producer(String fileName) {
 			// TODO Auto-generated constructor stub
 			this.fileName = fileName;
-			this.syncConsumer = syncConsumer;
-			this.syncProducer = syncProducer;
+
 		}
 		
 		@Override
@@ -45,31 +66,24 @@ public class FinderMain {
 				fileInputStream = new FileInputStream(fileName);
 				int size_of_read = 0;
 				
-				synchronized (syncProducer) {
-					while ((size_of_read = fileInputStream.read(buffer)) != -1) {
-						try {
-							blockingQueue.add(buffer);
-						} catch (IllegalStateException e) {
-							System.out.println("blockingQueue.size() = " + blockingQueue.size());
-							synchronized (syncConsumer) {
-								syncConsumer.notify();
-							}
-							syncProducer.wait();
-						}
-						buffer = new byte[64];
+				while ((size_of_read = fileInputStream.read(buffer)) != -1) {
+					try {
+						blockingQueue.put(buffer);
+					} catch (InterruptedException e) {
+						// TODO: handle exception
 					}
-					
+					buffer = new byte[64];
 				}
+				//syncConsumer.notify();
+				this.interrupt();
+				//blockingQueue.clear();
 
 			} catch (FileNotFoundException e1) {
 				// TODO Auto-generated catch block
 				e1.printStackTrace();
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
+				// TODO Auto-generated catch block 
 				e.printStackTrace();
-			} catch (InterruptedException e1) {
-				// TODO Auto-generated catch block
-				e1.printStackTrace();
 			}
 
 		}
@@ -85,38 +99,14 @@ public class FinderMain {
 	}
 	
 	class Consumer extends Thread{
-		private Object syncConsumer;
-		private Object syncProducer;
-		public Consumer(Object syncConsumer, Object syncProducer) {
-			// TODO Auto-generated constructor stub
-			this.syncConsumer = syncConsumer;
-			this.syncProducer = syncProducer;
-		}
 		
 		@Override
 		public void run() {
 			
 			try {
-				
-				synchronized (syncConsumer) {
-					
-					if (blockingQueue.isEmpty()){
-						syncConsumer.wait();
-						
-					} else {
 
-						while (!blockingQueue.isEmpty()) {
-							System.out.println(new String(blockingQueue.take()));
-							if(blockingQueue.isEmpty()){
-								System.out.println("Buffer is empty!!!!!!!!!!!!!!!!!!!");
-								synchronized (syncProducer){
-									syncProducer.notify();
-								}
-								syncConsumer.wait();
-							}
-						}
-					}
-
+				while(true){
+					System.out.println(new String(blockingQueue.take()));
 				}
 				
 			} catch (InterruptedException e) {
